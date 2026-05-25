@@ -28,7 +28,7 @@ export function ChatPanel({
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
-  const typingTimeout = useRef<ReturnType<typeof setTimeout>>();
+  const typingTimeout = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   // Load history + subscribe
   useEffect(() => {
