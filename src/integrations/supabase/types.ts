@@ -14,7 +14,130 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      messages: {
+        Row: {
+          created_at: string | null
+          id: string
+          kind: string | null
+          message: string
+          session_id: string | null
+          user_id: string | null
+          username: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          kind?: string | null
+          message: string
+          session_id?: string | null
+          user_id?: string | null
+          username?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          kind?: string | null
+          message?: string
+          session_id?: string | null
+          user_id?: string | null
+          username?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "messages_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      participants: {
+        Row: {
+          id: string
+          is_host: boolean | null
+          joined_at: string | null
+          session_id: string | null
+          user_id: string
+          username: string
+        }
+        Insert: {
+          id?: string
+          is_host?: boolean | null
+          joined_at?: string | null
+          session_id?: string | null
+          user_id: string
+          username: string
+        }
+        Update: {
+          id?: string
+          is_host?: boolean | null
+          joined_at?: string | null
+          session_id?: string | null
+          user_id?: string
+          username?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "participants_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      sessions: {
+        Row: {
+          backdrop_path: string | null
+          created_at: string | null
+          episode: number | null
+          host_id: string
+          id: string
+          media_type: string
+          playback_state: string | null
+          playback_time: number | null
+          poster_path: string | null
+          room_code: string
+          season: number | null
+          title: string | null
+          tmdb_id: number
+          updated_at: string | null
+        }
+        Insert: {
+          backdrop_path?: string | null
+          created_at?: string | null
+          episode?: number | null
+          host_id: string
+          id?: string
+          media_type?: string
+          playback_state?: string | null
+          playback_time?: number | null
+          poster_path?: string | null
+          room_code: string
+          season?: number | null
+          title?: string | null
+          tmdb_id: number
+          updated_at?: string | null
+        }
+        Update: {
+          backdrop_path?: string | null
+          created_at?: string | null
+          episode?: number | null
+          host_id?: string
+          id?: string
+          media_type?: string
+          playback_state?: string | null
+          playback_time?: number | null
+          poster_path?: string | null
+          room_code?: string
+          season?: number | null
+          title?: string | null
+          tmdb_id?: number
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
