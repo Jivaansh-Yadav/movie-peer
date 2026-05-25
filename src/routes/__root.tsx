@@ -72,14 +72,18 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Lovable App" },
-      { name: "description", content: "Lovable Generated Project" },
+      { title: "Movie Peer" },
+      { name: "description", content: "MoviePeer is a real-time watch party app for movies and TV shows." },
       { name: "author", content: "Lovable" },
-      { property: "og:title", content: "Lovable App" },
-      { property: "og:description", content: "Lovable Generated Project" },
+      { property: "og:title", content: "Movie Peer" },
+      { property: "og:description", content: "MoviePeer is a real-time watch party app for movies and TV shows." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
       { name: "twitter:site", content: "@Lovable" },
+      { name: "twitter:title", content: "Movie Peer" },
+      { name: "twitter:description", content: "MoviePeer is a real-time watch party app for movies and TV shows." },
+      { property: "og:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/7e1d213e-239d-4e76-8db2-f282800a1a09/id-preview-f6b53be7--42ac55eb-04fd-4c35-af68-6f43a8d7e0db.lovable.app-1779679490133.png" },
+      { name: "twitter:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/7e1d213e-239d-4e76-8db2-f282800a1a09/id-preview-f6b53be7--42ac55eb-04fd-4c35-af68-6f43a8d7e0db.lovable.app-1779679490133.png" },
     ],
     links: [
       {
