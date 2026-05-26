@@ -72,7 +72,6 @@ export function usePlaybackSync({
   // resyncToken changes ⇒ iframe re-mounts with fresh progress param
   const [resyncToken, setResyncToken] = useState(0);
   const [status, setStatus] = useState<SyncStatus>(isHost ? "host" : "syncing");
-  const waitingForSyncVersionRef = useRef<number | null>(null);
 
   // Member's local iframe time (from postMessage timeupdate)
   const localTimeRef = useRef<number>(initial?.currentTime ?? 0);
@@ -106,6 +105,34 @@ export function usePlaybackSync({
       setStatus(drift > OUT_OF_SYNC_DRIFT ? "out_of_sync" : "synced");
     });
 
+    ch.on("broadcast", { event: "sync-request" }, (msg) => {
+      if (!isHost) return;
+      const payload = msg.payload as { requesterUserId?: string } | null;
+      const requesterUserId = payload?.requesterUserId;
+      if (!requesterUserId || requesterUserId === userId) return;
+      channelRef.current?.send({
+        type: "broadcast",
+        event: "sync-response",
+        payload: {
+          requesterUserId,
+          currentTime: localTimeRef.current,
+          paused: pausedRef.current,
+          updatedAt: Date.now(),
+          hostUserId: userId,
+        } satisfies RemoteState & { requesterUserId: string },
+      });
+    });
+
+    ch.on("broadcast", { event: "sync-response" }, (msg) => {
+      if (isHost) return;
+      const payload = msg.payload as (RemoteState & { requesterUserId?: string }) | null;
+      if (!payload || payload.requesterUserId !== userId) return;
+      setRemote(payload);
+      setInitialProgress(computeInitialProgress(payload));
+      setResyncToken((n) => n + 1);
+      setStatus("syncing");
+    });
+
     ch.subscribe();
 
     return () => {
@@ -113,36 +140,6 @@ export function usePlaybackSync({
       channelRef.current = null;
     };
   }, [roomCode, isHost, computeInitialProgress, userId]);
-
-  useEffect(() => {
-    if (isHost) return;
-    const waitingFor = waitingForSyncVersionRef.current;
-    if (
-      waitingFor == null ||
-      syncVersion < waitingFor ||
-      syncProgress == null ||
-      syncPaused == null
-    )
-      return;
-    const snapshot: RemoteState = {
-      currentTime: syncProgress,
-      paused: syncPaused,
-      updatedAt: syncUpdatedAt ?? Date.now(),
-      hostUserId,
-    };
-    setRemote(snapshot);
-    setInitialProgress(computeInitialProgress(snapshot));
-    setResyncToken((n) => n + 1);
-    waitingForSyncVersionRef.current = null;
-  }, [
-    isHost,
-    syncVersion,
-    syncProgress,
-    syncPaused,
-    syncUpdatedAt,
-    hostUserId,
-    computeInitialProgress,
-  ]);
 
   // ---- Host broadcast helpers ----
   const broadcast = useCallback(
@@ -206,12 +203,14 @@ export function usePlaybackSync({
 
   // Manual resync from member
   const forceResync = useCallback(() => {
-    if (isHost || !sessionId) return;
+    if (isHost) return;
     setStatus("syncing");
-    const nextVersion = syncVersion + 1;
-    waitingForSyncVersionRef.current = nextVersion;
-    void supabase.from("sessions").update({ sync_request_nonce: Date.now() }).eq("id", sessionId);
-  }, [isHost, sessionId, syncVersion]);
+    channelRef.current?.send({
+      type: "broadcast",
+      event: "sync-request",
+      payload: { requesterUserId: userId },
+    });
+  }, [isHost, userId]);
 
   // When iframe finishes loading, member transitions resyncing→synced shortly after
   const markSynced = useCallback(() => {
