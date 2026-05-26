@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowLeft, Loader2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { getRoom } from "@/lib/session.functions";
@@ -9,6 +9,7 @@ import { useUser } from "@/lib/user-store";
 import { VidKingPlayer } from "@/components/VidKingPlayer";
 import { ChatPanel } from "@/components/ChatPanel";
 import { PresenceBar } from "@/components/PresenceBar";
+import { usePlaybackSync } from "@/lib/usePlaybackSync";
 
 export const Route = createFileRoute("/session/$roomId")({
   head: ({ params }) => ({
@@ -51,7 +52,7 @@ function SessionPage() {
     if (initial.data) setSession(initial.data as SessionRow);
   }, [initial.data]);
 
-  // Subscribe to session row updates (playback sync)
+  // Subscribe to session row updates (host changes, metadata)
   useEffect(() => {
     if (!session) return;
     const sub = supabase
@@ -107,17 +108,43 @@ function SessionPage() {
 
   const isHost = session?.host_id === userId;
 
-  async function broadcastPlayback(state: "playing" | "paused", time: number) {
-    if (!session) return;
-    await supabase
-      .from("sessions")
-      .update({
-        playback_state: state,
-        playback_time: time,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", session.id);
-  }
+  // Persist authoritative playback state (host-only writes)
+  const persistTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const persist = useCallback(
+    (s: { currentTime: number; paused: boolean }) => {
+      if (!session) return;
+      clearTimeout(persistTimer.current);
+      persistTimer.current = setTimeout(() => {
+        void supabase
+          .from("sessions")
+          .update({
+            playback_state: s.paused ? "paused" : "playing",
+            playback_time: s.currentTime,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", session.id);
+      }, 400);
+    },
+    [session?.id],
+  );
+
+  const initialPlayback = session
+    ? {
+        currentTime: session.playback_time ?? 0,
+        paused: (session.playback_state ?? "paused") !== "playing",
+        updatedAt: session.updated_at ? new Date(session.updated_at).getTime() : Date.now(),
+      }
+    : null;
+
+  const sync = usePlaybackSync({
+    sessionId: session?.id ?? "",
+    roomCode: code,
+    userId,
+    isHost,
+    hostUserId: session?.host_id ?? "",
+    initial: initialPlayback,
+    persist,
+  });
 
   async function transferHost(newHostId: string) {
     if (!session || !isHost) return;
@@ -128,11 +155,6 @@ function SessionPage() {
       kind: "system",
     });
   }
-
-  const remoteUpdatedAt = useMemo(
-    () => (session?.updated_at ? new Date(session.updated_at).getTime() : Date.now()),
-    [session?.updated_at],
-  );
 
   if (initial.isLoading) {
     return (
@@ -187,12 +209,13 @@ function SessionPage() {
             season={session.season ?? undefined}
             episode={session.episode ?? undefined}
             isHost={isHost}
-            onPlay={(t) => broadcastPlayback("playing", t)}
-            onPause={(t) => broadcastPlayback("paused", t)}
-            onSeek={(t) => broadcastPlayback(session.playback_state ?? "paused", t)}
-            remotePlaybackState={(session.playback_state ?? "paused") as "playing" | "paused"}
-            remoteTime={session.playback_time ?? 0}
-            remoteUpdatedAt={remoteUpdatedAt}
+            initialProgress={sync.initialProgress}
+            resyncToken={sync.resyncToken}
+            onPlay={sync.onHostPlay}
+            onPause={sync.onHostPause}
+            onSeek={sync.onHostSeek}
+            onTime={isHost ? sync.onHostTime : (t) => sync.onLocalTime(t)}
+            onLoaded={sync.markSynced}
           />
 
           <PresenceBar
@@ -212,6 +235,9 @@ function SessionPage() {
             sessionId={session.id}
             channel={channelRef.current}
             typingUsers={typingUsers}
+            isHost={isHost}
+            syncStatus={sync.status}
+            onResync={sync.forceResync}
           />
         </div>
       </div>

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Send, Smile } from "lucide-react";
+import { Send, Smile, RefreshCw, Radio } from "lucide-react";
+import type { SyncStatus } from "@/lib/usePlaybackSync";
 import { supabase } from "@/integrations/supabase/client";
 import { useUser } from "@/lib/user-store";
 
@@ -19,10 +20,16 @@ export function ChatPanel({
   sessionId,
   channel,
   typingUsers,
+  isHost,
+  syncStatus,
+  onResync,
 }: {
   sessionId: string;
   channel: ReturnType<typeof supabase.channel> | null;
   typingUsers: string[];
+  isHost: boolean;
+  syncStatus: SyncStatus;
+  onResync: () => void;
 }) {
   const { userId, username } = useUser();
   const [messages, setMessages] = useState<Msg[]>([]);
@@ -87,10 +94,38 @@ export function ChatPanel({
 
   return (
     <div className="flex h-full flex-col glass-strong rounded-2xl overflow-hidden">
-      <div className="px-4 py-3 border-b border-white/5 flex items-center justify-between">
+      <div className="px-4 py-3 border-b border-white/5 flex items-center justify-between gap-2">
         <div className="text-sm font-medium">Live chat</div>
-        <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
-          Realtime
+        <div className="flex items-center gap-2">
+          {isHost ? (
+            <span className="inline-flex items-center gap-1 text-[10px] uppercase tracking-widest text-primary">
+              <Radio className="h-3 w-3" /> Host
+            </span>
+          ) : (
+            <>
+              <span
+                className={`inline-flex items-center gap-1 text-[10px] uppercase tracking-widest ${
+                  syncStatus === "resyncing" ? "text-amber-400" : "text-emerald-400"
+                }`}
+              >
+                <span
+                  className={`h-1.5 w-1.5 rounded-full ${
+                    syncStatus === "resyncing"
+                      ? "bg-amber-400 animate-pulse"
+                      : "bg-emerald-400"
+                  }`}
+                />
+                {syncStatus === "resyncing" ? "Resyncing…" : "Synced"}
+              </span>
+              <button
+                onClick={onResync}
+                title="Resync with host"
+                className="glass rounded-full p-1.5 hover:bg-white/10 transition"
+              >
+                <RefreshCw className="h-3 w-3" />
+              </button>
+            </>
+          )}
         </div>
       </div>
 
