@@ -20,10 +20,16 @@ export function ChatPanel({
   sessionId,
   channel,
   typingUsers,
+  isHost,
+  syncStatus,
+  onResync,
 }: {
   sessionId: string;
   channel: ReturnType<typeof supabase.channel> | null;
   typingUsers: string[];
+  isHost: boolean;
+  syncStatus: SyncStatus;
+  onResync: () => void;
 }) {
   const { userId, username } = useUser();
   const [messages, setMessages] = useState<Msg[]>([]);
