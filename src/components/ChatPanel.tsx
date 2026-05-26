@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Send, Smile } from "lucide-react";
+import { Send, Smile, RefreshCw, Radio } from "lucide-react";
+import type { SyncStatus } from "@/lib/usePlaybackSync";
 import { supabase } from "@/integrations/supabase/client";
 import { useUser } from "@/lib/user-store";
 
