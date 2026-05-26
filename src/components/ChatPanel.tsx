@@ -54,7 +54,12 @@ export function ChatPanel({
       .channel(`messages:${sessionId}`)
       .on(
         "postgres_changes",
-        { event: "INSERT", schema: "public", table: "messages", filter: `session_id=eq.${sessionId}` },
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "messages",
+          filter: `session_id=eq.${sessionId}`,
+        },
         (payload) => {
           setMessages((prev) => [...prev, payload.new as Msg]);
         },
@@ -105,17 +110,27 @@ export function ChatPanel({
             <>
               <span
                 className={`inline-flex items-center gap-1 text-[10px] uppercase tracking-widest ${
-                  syncStatus === "resyncing" ? "text-amber-400" : "text-emerald-400"
+                  syncStatus === "out_of_sync"
+                    ? "text-amber-400"
+                    : syncStatus === "syncing"
+                      ? "text-sky-400"
+                      : "text-emerald-400"
                 }`}
               >
                 <span
                   className={`h-1.5 w-1.5 rounded-full ${
-                    syncStatus === "resyncing"
+                    syncStatus === "out_of_sync"
                       ? "bg-amber-400 animate-pulse"
-                      : "bg-emerald-400"
+                      : syncStatus === "syncing"
+                        ? "bg-sky-400 animate-pulse"
+                        : "bg-emerald-400"
                   }`}
                 />
-                {syncStatus === "resyncing" ? "Resyncing…" : "Synced"}
+                {syncStatus === "out_of_sync"
+                  ? "Out of sync"
+                  : syncStatus === "syncing"
+                    ? "Syncing…"
+                    : "Synced"}
               </span>
               <button
                 onClick={onResync}
@@ -165,7 +180,7 @@ export function ChatPanel({
                 className={`flex flex-col ${mine ? "items-end" : "items-start"}`}
               >
                 <div className="text-[10px] text-muted-foreground mb-0.5 px-1">
-                  {mine ? "You" : m.username ?? "Anon"} ·{" "}
+                  {mine ? "You" : (m.username ?? "Anon")} ·{" "}
                   {new Date(m.created_at).toLocaleTimeString([], {
                     hour: "2-digit",
                     minute: "2-digit",
