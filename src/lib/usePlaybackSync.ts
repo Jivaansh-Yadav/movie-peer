@@ -10,7 +10,7 @@ export interface RemoteState {
   hostUserId: string;
 }
 
-export type SyncStatus = "synced" | "resyncing" | "host";
+export type SyncStatus = "synced" | "out_of_sync" | "syncing" | "host";
 
 interface Options {
   sessionId: string;
@@ -18,13 +18,17 @@ interface Options {
   userId: string;
   isHost: boolean;
   hostUserId: string;
+  syncVersion: number;
+  syncProgress: number | null;
+  syncPaused: boolean | null;
+  syncUpdatedAt: number | null;
   /** Initial DB-persisted state for late joiners */
   initial: { currentTime: number; paused: boolean; updatedAt: number } | null;
   /** Persist authoritative state to DB (host only). */
   persist: (state: { currentTime: number; paused: boolean }) => void;
 }
 
-const DRIFT_HARD_RESYNC = 2; // seconds
+const OUT_OF_SYNC_DRIFT = 2; // seconds
 const HOST_TICK_INTERVAL_MS = 2500;
 
 /**
@@ -55,29 +59,24 @@ export function usePlaybackSync({
 
   // Initial progress used for iframe src on mount / hard resync.
   // Account for network delay since the host broadcast.
-  const computeInitialProgress = useCallback(
-    (state: RemoteState | null): number => {
-      if (!state) return 0;
-      const elapsed = (Date.now() - state.updatedAt) / 1000;
-      const drift = state.paused ? 0 : Math.max(0, elapsed);
-      return Math.max(0, state.currentTime + drift);
-    },
-    [],
-  );
+  const computeInitialProgress = useCallback((state: RemoteState | null): number => {
+    if (!state) return 0;
+    const elapsed = (Date.now() - state.updatedAt) / 1000;
+    const drift = state.paused ? 0 : Math.max(0, elapsed);
+    return Math.max(0, state.currentTime + drift);
+  }, []);
 
   const [initialProgress, setInitialProgress] = useState<number>(() =>
-    computeInitialProgress(
-      initial
-        ? { ...initial, hostUserId }
-        : null,
-    ),
+    computeInitialProgress(initial ? { ...initial, hostUserId } : null),
   );
   // resyncToken changes ⇒ iframe re-mounts with fresh progress param
   const [resyncToken, setResyncToken] = useState(0);
-  const [status, setStatus] = useState<SyncStatus>(isHost ? "host" : "resyncing");
+  const [status, setStatus] = useState<SyncStatus>(isHost ? "host" : "syncing");
+  const waitingForSyncVersionRef = useRef<number | null>(null);
 
   // Member's local iframe time (from postMessage timeupdate)
   const localTimeRef = useRef<number>(initial?.currentTime ?? 0);
+  const pausedRef = useRef<boolean>(initial?.paused ?? true);
   // Last broadcast tick from host (throttle)
   const lastHostTickRef = useRef<number>(0);
 
@@ -101,25 +100,10 @@ export function usePlaybackSync({
       });
       if (isHost) return;
 
-      // Hard events: play / pause / seek → force resync
-      if (p.kind === "seek" || p.kind === "play" || p.kind === "pause") {
-        setInitialProgress(computeInitialProgress(p));
-        setResyncToken((n) => n + 1);
-        setStatus("resyncing");
-        return;
-      }
-
-      // tick → drift check against local iframe time
-      const expected =
-        p.currentTime + (p.paused ? 0 : (Date.now() - p.updatedAt) / 1000);
+      if (p.kind === "seek" || p.kind === "play" || p.kind === "pause") return;
+      const expected = p.currentTime + (p.paused ? 0 : (Date.now() - p.updatedAt) / 1000);
       const drift = Math.abs(expected - localTimeRef.current);
-      if (drift > DRIFT_HARD_RESYNC) {
-        setInitialProgress(expected);
-        setResyncToken((n) => n + 1);
-        setStatus("resyncing");
-      } else {
-        setStatus("synced");
-      }
+      setStatus(drift > OUT_OF_SYNC_DRIFT ? "out_of_sync" : "synced");
     });
 
     ch.subscribe();
@@ -128,15 +112,41 @@ export function usePlaybackSync({
       supabase.removeChannel(ch);
       channelRef.current = null;
     };
-  }, [roomCode, isHost, computeInitialProgress]);
+  }, [roomCode, isHost, computeInitialProgress, userId]);
+
+  useEffect(() => {
+    if (isHost) return;
+    const waitingFor = waitingForSyncVersionRef.current;
+    if (
+      waitingFor == null ||
+      syncVersion < waitingFor ||
+      syncProgress == null ||
+      syncPaused == null
+    )
+      return;
+    const snapshot: RemoteState = {
+      currentTime: syncProgress,
+      paused: syncPaused,
+      updatedAt: syncUpdatedAt ?? Date.now(),
+      hostUserId,
+    };
+    setRemote(snapshot);
+    setInitialProgress(computeInitialProgress(snapshot));
+    setResyncToken((n) => n + 1);
+    waitingForSyncVersionRef.current = null;
+  }, [
+    isHost,
+    syncVersion,
+    syncProgress,
+    syncPaused,
+    syncUpdatedAt,
+    hostUserId,
+    computeInitialProgress,
+  ]);
 
   // ---- Host broadcast helpers ----
   const broadcast = useCallback(
-    (
-      kind: "play" | "pause" | "seek" | "tick",
-      currentTime: number,
-      paused: boolean,
-    ) => {
+    (kind: "play" | "pause" | "seek" | "tick", currentTime: number, paused: boolean) => {
       const payload: RemoteState & { kind: string } = {
         kind,
         currentTime,
@@ -165,13 +175,13 @@ export function usePlaybackSync({
     [isHost, broadcast],
   );
   const onHostSeek = useCallback(
-    (t: number, paused: boolean) =>
-      isHost && broadcast("seek", t, paused),
+    (t: number, paused: boolean) => isHost && broadcast("seek", t, paused),
     [isHost, broadcast],
   );
   const onHostTime = useCallback(
     (t: number, paused: boolean) => {
       localTimeRef.current = t;
+      pausedRef.current = paused;
       if (!isHost) return;
       const now = Date.now();
       if (now - lastHostTickRef.current < HOST_TICK_INTERVAL_MS) return;
@@ -182,17 +192,26 @@ export function usePlaybackSync({
   );
 
   // Member: register own iframe time
-  const onLocalTime = useCallback((t: number) => {
-    localTimeRef.current = t;
-  }, []);
+  const onLocalTime = useCallback(
+    (t: number) => {
+      localTimeRef.current = t;
+      if (!remote) return;
+      const expected =
+        remote.currentTime + (remote.paused ? 0 : (Date.now() - remote.updatedAt) / 1000);
+      const drift = Math.abs(expected - t);
+      setStatus(drift > OUT_OF_SYNC_DRIFT ? "out_of_sync" : "synced");
+    },
+    [remote],
+  );
 
   // Manual resync from member
   const forceResync = useCallback(() => {
-    if (isHost || !remote) return;
-    setInitialProgress(computeInitialProgress(remote));
-    setResyncToken((n) => n + 1);
-    setStatus("resyncing");
-  }, [isHost, remote, computeInitialProgress]);
+    if (isHost || !sessionId) return;
+    setStatus("syncing");
+    const nextVersion = syncVersion + 1;
+    waitingForSyncVersionRef.current = nextVersion;
+    void supabase.from("sessions").update({ sync_request_nonce: Date.now() }).eq("id", sessionId);
+  }, [isHost, sessionId, syncVersion]);
 
   // When iframe finishes loading, member transitions resyncing→synced shortly after
   const markSynced = useCallback(() => {
@@ -212,6 +231,10 @@ export function usePlaybackSync({
       onLocalTime,
       forceResync,
       markSynced,
+      getHostSnapshot: () => ({
+        currentTime: localTimeRef.current,
+        paused: pausedRef.current,
+      }),
     }),
     [
       status,
@@ -225,6 +248,7 @@ export function usePlaybackSync({
       onLocalTime,
       forceResync,
       markSynced,
+      localTimeRef,
     ],
   );
 }

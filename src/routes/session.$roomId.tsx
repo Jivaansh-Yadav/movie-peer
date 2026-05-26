@@ -33,6 +33,11 @@ interface SessionRow {
   episode: number | null;
   playback_time: number | null;
   playback_state: "playing" | "paused" | null;
+  sync_version: number | null;
+  sync_progress: number | null;
+  sync_paused: boolean | null;
+  sync_updated_at: string | null;
+  sync_request_nonce: number | null;
   updated_at: string;
 }
 
@@ -142,9 +147,31 @@ function SessionPage() {
     userId,
     isHost,
     hostUserId: session?.host_id ?? "",
+    syncVersion: session?.sync_version ?? 0,
+    syncProgress: session?.sync_progress ?? null,
+    syncPaused: session?.sync_paused ?? null,
+    syncUpdatedAt: session?.sync_updated_at ? new Date(session.sync_updated_at).getTime() : null,
     initial: initialPlayback,
     persist,
   });
+
+  const lastHandledSyncNonceRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (!session || !isHost) return;
+    const nonce = session.sync_request_nonce;
+    if (nonce == null || nonce === lastHandledSyncNonceRef.current) return;
+    lastHandledSyncNonceRef.current = nonce;
+    const snapshot = sync.getHostSnapshot();
+    void supabase
+      .from("sessions")
+      .update({
+        sync_version: (session.sync_version ?? 0) + 1,
+        sync_progress: snapshot.currentTime,
+        sync_paused: snapshot.paused,
+        sync_updated_at: new Date().toISOString(),
+      })
+      .eq("id", session.id);
+  }, [session, isHost, sync]);
 
   async function transferHost(newHostId: string) {
     if (!session || !isHost) return;
