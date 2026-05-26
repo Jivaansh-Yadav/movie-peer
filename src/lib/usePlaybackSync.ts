@@ -18,6 +18,10 @@ interface Options {
   userId: string;
   isHost: boolean;
   hostUserId: string;
+  syncVersion: number;
+  syncProgress: number | null;
+  syncPaused: boolean | null;
+  syncUpdatedAt: number | null;
   /** Initial DB-persisted state for late joiners */
   initial: { currentTime: number; paused: boolean; updatedAt: number } | null;
   /** Persist authoritative state to DB (host only). */
@@ -226,6 +230,10 @@ export function usePlaybackSync({
       onLocalTime,
       forceResync,
       markSynced,
+      getHostSnapshot: () => ({
+        currentTime: localTimeRef.current,
+        paused: pausedRef.current,
+      }),
     }),
     [
       status,
@@ -239,6 +247,7 @@ export function usePlaybackSync({
       onLocalTime,
       forceResync,
       markSynced,
+      localTimeRef,
     ],
   );
 }
