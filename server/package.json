@@ -1,0 +1,16 @@
+{
+  "name": "movie-peer-server",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch src/index.js",
+    "build": "node --check src/index.js",
+    "start": "NODE_ENV=production node src/index.js"
+  },
+  "dependencies": {
+    "express": "latest",
+    "socket.io": "latest"
+  },
+  "devDependencies": {}
+}

@@ -1,0 +1,11 @@
+node_modules/
+dist/
+client/dist/
+server/logs/
+.env
+.DS_Store
+*.local
+movies/*
+!movies/.gitkeep
+subtitles/*
+!subtitles/.gitkeep
